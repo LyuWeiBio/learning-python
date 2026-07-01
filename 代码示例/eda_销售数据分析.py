@@ -31,20 +31,21 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "eda_output")
 
 def build_dataset(n: int = 500) -> pd.DataFrame:
     """生成一份模拟电商销售数据。"""
-    rng = np.random.default_rng(42)
+    # 使用与第 23 章正文相同的随机接口和种子，运行本脚本即可复现正文所述数据
+    np.random.seed(42)
     df = pd.DataFrame(
         {
             "订单ID": range(1, n + 1),
-            "类别": rng.choice(["电子产品", "服装", "食品", "家居", "图书"], n),
-            "地区": rng.choice(["华北", "华东", "华南", "西部"], n, p=[0.3, 0.3, 0.25, 0.15]),
-            "销售额": np.round(rng.gamma(2, 300, n), 2),
-            "数量": rng.integers(1, 11, n),
-            "客户年龄": rng.integers(18, 65, n).astype(float),
+            "类别": np.random.choice(["电子产品", "服装", "食品", "家居", "图书"], n),
+            "地区": np.random.choice(["华北", "华东", "华南", "西部"], n, p=[0.3, 0.3, 0.25, 0.15]),
+            "销售额": np.round(np.random.gamma(2, 300, n), 2),
+            "数量": np.random.randint(1, 11, n),
+            "客户年龄": np.random.randint(18, 65, n).astype(float),
         }
     )
-    df["利润"] = np.round(df["销售额"] * rng.uniform(0.05, 0.3, n), 2)
+    df["利润"] = np.round(df["销售额"] * np.random.uniform(0.05, 0.3, n), 2)
     # 人为制造缺失值
-    missing_idx = rng.choice(n, 25, replace=False)
+    missing_idx = np.random.choice(n, 25, replace=False)
     df.loc[missing_idx, "客户年龄"] = np.nan
     return df
 
