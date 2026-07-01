@@ -180,11 +180,12 @@ sales = pd.DataFrame({
     "薪资": [15000, 12000, 20000, 13000, 18000],
 })
 
-# 按部门分组，求每组的平均薪资
-print(sales.groupby("部门")["薪资"].mean())
+# 按部门分组，求每组的平均薪资（.round(2) 让小数更整洁）
+print(sales.groupby("部门")["薪资"].mean().round(2))
 # 部门
 # 技术    17666.67
 # 销售    12500.00
+# Name: 薪资, dtype: float64
 
 # 每组的人数
 print(sales.groupby("部门").size())
