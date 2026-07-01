@@ -18,4 +18,7 @@ env/
 *.png
 *.jpg
 *.csv.tmp
+*.joblib
+*.pkl
 output/
+代码示例/eda_output/
