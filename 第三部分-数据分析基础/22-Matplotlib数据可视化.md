@@ -96,6 +96,7 @@ plt.show()
 
 ```python
 import numpy as np
+import matplotlib.pyplot as plt
 
 np.random.seed(0)
 height = np.random.normal(170, 8, 50)      # 50 个身高
@@ -115,6 +116,8 @@ plt.show()
 直方图把数据分成若干区间（bin），统计每个区间的频数，用来看数据的分布形态：
 
 ```python
+import matplotlib.pyplot as plt
+
 np.random.seed(0)
 scores = np.random.normal(75, 10, 200)     # 200 个成绩，均值75、标准差10
 

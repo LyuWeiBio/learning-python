@@ -5,7 +5,7 @@
 numpy>=1.26        # 数值计算基础库（第 19 章）
 pandas>=2.0        # 数据处理与分析（第 20、21 章）
 matplotlib>=3.7    # 数据可视化（第 22 章）
-scikit-learn>=1.3  # 机器学习库（第 24-29 章）
+scikit-learn>=1.4  # 机器学习库（第 24-29 章；1.4+ 提供 root_mean_squared_error 等 API）
 
 # 可选：交互式学习环境，强烈推荐
 jupyter>=1.0       # Jupyter Notebook / Lab，适合边写边看结果
