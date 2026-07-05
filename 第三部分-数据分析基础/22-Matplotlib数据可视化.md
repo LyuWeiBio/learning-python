@@ -117,6 +117,7 @@ plt.show()
 
 ```python
 import matplotlib.pyplot as plt
+import numpy as np
 
 np.random.seed(0)
 scores = np.random.normal(75, 10, 200)     # 200 个成绩，均值75、标准差10
