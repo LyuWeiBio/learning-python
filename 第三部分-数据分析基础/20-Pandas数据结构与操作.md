@@ -84,7 +84,7 @@ print(df)
 
 ## 20.4 读写文件
 
-真实数据通常来自文件。Pandas 读取 CSV 极其简单：
+真实数据通常来自文件。Pandas 读取 CSV 极其简单（下面的 `data.csv` 请换成你自己的数据文件）：
 
 ```python
 # 读取 CSV（最常用）
