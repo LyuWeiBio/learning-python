@@ -3,6 +3,7 @@
 > **所属部分**：第三部分 · 数据分析基础
 > **预计学习时间**：45 分钟
 > **前置知识**：第 20 章（Pandas 基础）
+> **配套代码**：[`代码示例/ch21_Pandas数据清洗与聚合.py`](../代码示例/ch21_Pandas数据清洗与聚合.py)
 
 ## 本章学习目标
 
@@ -31,7 +32,18 @@ df = pd.DataFrame({
 print(df)
 ```
 
-其中 `None` 和 `np.nan` 都表示**缺失值**（Not a Number / 空）。
+其中 `None` 和 `np.nan` 都表示**缺失值**（Not a Number / 空）。打印出来是这样的：
+
+```
+   姓名   部门       薪资  年龄
+0  小明   技术  15000.0  25
+1  小红   销售  12000.0  30
+2  小刚   技术      NaN  28
+3  小丽  NaN  18000.0  35
+4  小明   销售  15000.0  25
+```
+
+注意两个细节：缺失值显示为 `NaN`（较老的 pandas 版本里，文本列的缺失可能显示为 `None`）；“薪资”列因为混进了 `NaN`，整数都变成了小数（`15000.0`）——`NaN` 在计算机里属于小数类型。
 
 ---
 
@@ -43,7 +55,19 @@ print(df.isnull().sum())    # 每列的缺失值个数（最常用！）
 print(df.isnull().sum().sum())   # 总缺失数
 ```
 
-`df.isnull().sum()` 是拿到数据后必做的检查，一眼看出哪列缺失多少。
+`df.isnull().sum()` 是拿到数据后必做的检查，一眼看出哪列缺失多少：
+
+```
+姓名    0
+部门    1
+薪资    1
+年龄    0
+dtype: int64
+```
+
+为什么 `.sum()` 能数出个数？因为 `True` 在计算时当作 1、`False` 当作 0，把一列 True/False 加起来，就是 True 的个数。
+
+> **不能用 `== np.nan` 判断缺失**：`np.nan == np.nan` 的结果是 `False`（规定“缺失值不等于任何值，包括它自己”），所以 `df[df["薪资"] == np.nan]` 永远筛不出东西。判断缺失一律用 `isnull()`（或同义的 `isna()`），例如 `df[df["薪资"].isnull()]`。
 
 ---
 
@@ -77,6 +101,8 @@ print(df)
 
 选择删除还是填充，取决于缺失比例和业务含义：缺失很少可删；缺失较多、且能合理估计时宜填充。
 
+> 和第 20 章一样，`dropna()`、`fillna()` 都**返回新的数据**，不会修改原表。所以上面写的是 `df["薪资"] = df["薪资"].fillna(...)`；删除缺失行要写 `df = df.dropna()`。
+
 ---
 
 ## 21.4 处理重复值
@@ -100,9 +126,15 @@ print(df.dtypes)
 df["年龄"] = df["年龄"].astype(int)
 df["薪资"] = df["薪资"].astype(float)
 
-# 字符串转数字（含错误处理）
-# pd.to_numeric(series, errors="coerce")  无法转换的会变成 NaN
+# 字符串转数字（含错误处理）：无法转换的会变成 NaN
+s = pd.Series(["12000", "1.5万", "13000"])
+print(pd.to_numeric(s, errors="coerce"))
+# 0    12000.0
+# 1        NaN     ← "1.5万" 转不了，变成缺失值，之后可以再单独处理
+# 2    13000.0
 ```
+
+> 含有 `NaN` 的列不能直接 `astype(int)`，会报 `IntCastingNaNError: Cannot convert non-finite values (NA or inf) to integer`。先处理缺失（`fillna` 或 `dropna`），再转换类型。
 
 ---
 
@@ -111,7 +143,7 @@ df["薪资"] = df["薪资"].astype(float)
 ### map：对 Series 逐元素变换
 
 ```python
-# 用字典做映射
+# 用字典做映射（字典里没写到的值会变成 NaN，所以要把所有可能的值都列全）
 df["部门编码"] = df["部门"].map({"技术": 1, "销售": 2, "未知": 0})
 
 # 用函数变换（需先运行 §21.3 填充薪资缺失值，否则 NaN 会被归为"普通"）
@@ -171,6 +203,20 @@ print(df["部门"].unique())       # 列出所有不同的值
 
 `groupby` 实现“**分组—计算**”，是 Pandas 最强大的功能之一。思路是“**拆分-应用-合并**”：先按某列把数据分成若干组，对每组做统计，再把结果合起来。
 
+以“求每个部门的平均薪资”为例：
+
+```
+   原始数据            ① 拆分（按部门）          ② 应用（求均值）    ③ 合并
+ 部门  薪资
+ 技术  15000        技术组：15000, 20000, 18000  →  17666.67         部门  薪资
+ 销售  12000   →                                                   技术  17666.67
+ 技术  20000        销售组：12000, 13000         →  12500.00         销售  12500.00
+ 销售  13000
+ 技术  18000
+```
+
+在 Excel 里，这相当于“数据透视表”。
+
 ```python
 import pandas as pd
 
@@ -198,6 +244,23 @@ print(sales.groupby("部门")["薪资"].agg(["mean", "max", "min", "count"]))
 ```
 
 `groupby(列)[目标列].聚合函数()` 是最常用的模式：例如“**每个部门**的**平均薪资**”“**每个城市**的**销量总和**”。`agg` 可以一次算多个指标。
+
+把中文需求翻译成代码的方法：“**按 A** 分组，求 **B** 的 **C**” → `df.groupby("A")["B"].C()`。
+
+如果想对**不同的列**做**不同的统计**，并给结果列起名字，可以用“命名聚合”：
+
+```python
+print(sales.groupby("部门").agg(
+    平均薪资=("薪资", "mean"),     # 新列名=("原列名", "统计方法")
+    人数=("姓名", "count"),
+))
+#             平均薪资  人数
+# 部门
+# 技术  17666.666667   3
+# 销售  12500.000000   2
+```
+
+> 分组结果的**行索引是分组的值**（上面的“技术”“销售”）。想把它变回普通的一列、得到一张常规表格，在末尾加 `.reset_index()`：`sales.groupby("部门")["薪资"].mean().reset_index()`。
 
 ---
 
@@ -231,14 +294,81 @@ print(result)
 
 ---
 
+## 新手常见错误
+
+### ❶ 用 `== np.nan` 找缺失值
+
+```python
+print(df[df["薪资"] == np.nan])     # Empty DataFrame，什么也没找到
+```
+
+**原因**：`NaN` 不等于任何值，包括它自己。这个错误**不会报错**。
+**改法**：`df[df["薪资"].isnull()]`。
+
+### ❷ 对含缺失值的列转整数
+
+```python
+df["薪资"].astype(int)
+```
+
+```
+IntCastingNaNError: Cannot convert non-finite values (NA or inf) to integer
+```
+
+**原因**：整数类型里没有办法表示 `NaN`（`non-finite values` = 非有限值，包括 NaN 和无穷大）。
+**改法**：先 `fillna(...)` 或 `dropna()`，再 `astype(int)`。
+
+### ❸ 文本格式的数字无法转换
+
+```python
+pd.Series(["12,000"]).astype(int)
+```
+
+```
+ValueError: invalid literal for int() with base 10: '12,000'
+```
+
+**原因**：千分位逗号、单位（“元”“万”）、空格等字符让字符串无法直接转成数字。
+**改法**：先用 `.str.replace(",", "")` 等方法清理文本，再转换；或用 `pd.to_numeric(s, errors="coerce")` 把转不了的变成 `NaN`，再单独排查。
+
+### ❹ 对整张表 `groupby` 后直接求均值
+
+```python
+sales.groupby("部门").mean()
+```
+
+```
+TypeError: agg function failed [how->mean,dtype->object]
+```
+
+（pandas 3.x 中显示为 `TypeError: dtype 'str' does not support operation 'mean'`。）
+
+**原因**：表里还有“姓名”这样的文本列，文本没法求平均。
+**改法**：明确指定要统计的列：`sales.groupby("部门")["薪资"].mean()`；或者加参数 `numeric_only=True` 只统计数字列。
+
+### ❺ `merge` 时两张表的键名不一致
+
+```python
+pd.merge(students, scores, on="学号")   # scores 里这一列其实叫 "ID"
+```
+
+```
+KeyError: '学号'
+```
+
+**原因**：`on="学号"` 要求两张表里**都有**名为“学号”的列。
+**改法**：先 `print(df.columns)` 核对；列名不同时用 `pd.merge(students, scores, left_on="学号", right_on="ID")`。
+
+---
+
 ## 本章小结
 
-- 缺失值：`isnull().sum()` 检测；`dropna()` 删除、`fillna()` 填充（可用均值/固定值）。
+- 缺失值：`isnull().sum()` 检测；`dropna()` 删除、`fillna()` 填充（可用均值/固定值）；判断缺失不能用 `== np.nan`。
 - 重复值：`duplicated()` / `drop_duplicates()`；类型转换 `astype`。
 - 自定义变换：`map`（Series 逐元素/字典映射）、`apply`（更通用，可 `axis=1` 按行）。
 - 文本列用 `.str.xxx()` 批量处理字符串。
 - `value_counts()` 统计频数，`nunique`/`unique` 看类别。
-- **`groupby(列)[目标].聚合()`** 分组聚合，`agg` 一次多指标。
+- **`groupby(列)[目标].聚合()`** 分组聚合，`agg` 一次多指标；命名聚合 `agg(新名=("列", "方法"))`；`reset_index()` 把分组结果变回普通表格。
 - 合并：`concat`（堆叠）、`merge(on=键)`（按键关联）。
 
 ---
@@ -263,6 +393,21 @@ df = pd.DataFrame({
 3. **分组求和**：按城市分组，求各城市的总利润。
 4. **分组多指标**：按类别分组，求每个类别的销量均值和利润总和。
 5. **新增列 + 分组**：新增一列 `利润率` = 利润 / 销量，然后求各城市的平均利润率。
+
+---
+
+## 解题提示
+
+<details>
+<summary>💡 卡住了？先看提示（只给思路，不给答案）</summary>
+
+- **第 1 题**：统计缺失用 `isnull().sum()`；填充用 `fillna()`，填充值是 `df["销量"].mean()`。别忘了把结果赋值回 `df["销量"]`。
+- **第 2 题**：“每个值出现几次”用 `value_counts()`。
+- **第 3 题**：套用公式“按 A 分组，求 B 的 C”：A = 城市，B = 利润，C = sum。
+- **第 4 题**：对两列做不同的统计，用 21.9 节的“命名聚合”：`agg(新列名=("原列名", "方法"), ...)`。
+- **第 5 题**：先用两列相除创建“利润率”列，再“按城市分组，求利润率的平均值”。注意要先做第 1 题填好缺失值，否则有一行利润率是 `NaN`。
+
+</details>
 
 ---
 
