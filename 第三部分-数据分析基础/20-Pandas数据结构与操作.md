@@ -40,7 +40,7 @@ Pandas 有两个核心数据结构：
 | 第一行的列标题 | `df.columns`（列名） |
 | 最左边的行号 | `df.index`（行索引） |
 | 筛选 / 排序按钮 | `df[条件]` / `df.sort_values()` |
-| 数据透视表 | `groupby` / `pivot_table`（第 21 章） |
+| 数据透视表 | `groupby`（第 21 章）/ `pivot_table`（第 23 章） |
 
 > **在 `.py` 脚本里要 `print` 才能看到结果**。如果用的是 Jupyter Notebook，单元格最后一行的表达式会自动显示（而且是更好看的表格），不用写 `print`。本章代码为了在两种环境里都能用，统一写了 `print`。
 
@@ -198,7 +198,7 @@ print(df.loc[0:2, ["姓名", "成绩"]])   # 注意：loc 切片含尾！
 上面的例子里，行索引恰好是 `0, 1, 2, 3`，所以 `loc[0]` 和 `iloc[0]` 看起来一样。一旦**排序或筛选**之后，两者就不同了：
 
 ```python
-df2 = df.sort_values("成绩", ascending=False)
+df2 = df.sort_values("成绩", ascending=False)   # 按成绩从高到低排序（20.10 节详讲）
 print(df2)
 #    姓名  年龄  城市  成绩
 # 3  小丽  21  深圳  95

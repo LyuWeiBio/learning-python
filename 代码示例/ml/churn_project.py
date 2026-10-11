@@ -69,7 +69,7 @@ def build_dataset(n: int = 1500) -> pd.DataFrame:
 
     # 人为制造缺失值
     df.loc[rng.choice(n, 60, replace=False), "年龄"] = np.nan
-    df.loc[rng.choice(n, 40, replace=False), "套餐"] = None
+    df.loc[rng.choice(n, 40, replace=False), "套餐"] = np.nan
     return df
 
 

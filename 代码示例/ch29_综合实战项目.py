@@ -60,7 +60,7 @@ def build_dataset(n: int = 600) -> pd.DataFrame:
         "是否流失": churn,
     })
     df.loc[rng.choice(n, 30, replace=False), "年龄"] = np.nan   # 人为制造缺失
-    df.loc[rng.choice(n, 20, replace=False), "套餐"] = None
+    df.loc[rng.choice(n, 20, replace=False), "套餐"] = np.nan
     return df
 
 
