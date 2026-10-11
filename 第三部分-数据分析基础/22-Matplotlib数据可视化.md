@@ -56,7 +56,8 @@ plt.rcParams["axes.unicode_minus"] = False           # 正常显示负号
 plt.rcParams["font.sans-serif"] = [
     "SimHei", "Microsoft YaHei",            # Windows
     "PingFang SC", "Heiti TC", "Arial Unicode MS",   # macOS
-    "WenQuanYi Zen Hei", "Noto Sans CJK SC",         # Linux
+    "WenQuanYi Zen Hei", "WenQuanYi Micro Hei",      # Linux
+    "Noto Sans CJK SC", "Noto Sans CJK JP",          # Linux（Matplotlib 3.10 及更早版本常常只认得 JP 这个名字，它同样能显示中文）
 ]
 plt.rcParams["axes.unicode_minus"] = False
 ```
@@ -66,9 +67,9 @@ plt.rcParams["axes.unicode_minus"] = False
 ```python
 from matplotlib import font_manager
 
-names = sorted({f.name for f in font_manager.fontManager.ttflist})
+names = sorted({f.name for f in font_manager.fontManager.ttflist})   # 花括号推导式得到一个“集合”，自动去掉重复的名字
 keywords = ["Hei", "Song", "Kai", "YaHei", "PingFang", "CJK", "WenQuanYi", "Arial Unicode"]
-print([n for n in names if any(k in n for k in keywords)])
+print([n for n in names if any(k in n for k in keywords)])   # any(...)：名字里只要含有任意一个关键词，就留下
 ```
 
 设置了不存在的字体时，终端里会出现类似 `findfont: ... none of the following families were found: SimHei` 的提示；中文仍显示为方框时，会出现 `UserWarning: Glyph 19978 (\N{CJK UNIFIED IDEOGRAPH-4E0A}) missing from font(s) DejaVu Sans`（字体里缺少这个汉字）。看到它们，就说明字体没配好。
