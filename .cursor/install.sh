@@ -93,10 +93,11 @@ as_root() {
 
 have_apt() { command -v apt-get >/dev/null 2>&1 && [[ "$CAN_ROOT" -eq 1 ]]; }
 
+# LC_ALL=C：下面要按英文原文判断 apt 的报错（中文系统里 apt 会输出中文）
 apt_run() {
-  as_root env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get \
+  as_root env LC_ALL=C DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get \
     -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 \
-    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@"
+    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" </dev/null
 }
 
 APT_UPDATED=0   # 本次运行是否已经 update 过
@@ -142,7 +143,8 @@ apt_install() {  # apt_install <包名...>：全部装上返回 0
     printf '%s\n' "$out" >&2
     if grep -q "dpkg was interrupted" <<<"$out"; then
       log "上次的软件包安装被中断过，先执行 dpkg --configure -a 修复 ..."
-      as_root env DEBIAN_FRONTEND=noninteractive dpkg --configure -a >&2 || true
+      as_root env LC_ALL=C DEBIAN_FRONTEND=noninteractive \
+        dpkg --force-confdef --force-confold --configure -a </dev/null >&2 || true
       continue
     fi
     # 索引是完整的、只是确实没有这个包：重试没有意义
@@ -225,19 +227,40 @@ fi
 # （不少受限网络只放行 pypi.org / files.pythonhosted.org，bootstrap.pypa.io 反而不通）
 bootstrap_pip_from_wheel() {
   local whl
-  whl="$("$PYTHON" -c 'import json, os, sys, urllib.request as u
+  # 选“支持当前 Python 的最新版 pip”，而不是盲目取最新版（新版 pip 会陆续放弃老的 Python）
+  whl="$("$PYTHON" - "$TMP_ROOT" <<'PY'
+import json, os, re, sys, urllib.request as u
 m = json.load(u.urlopen("https://pypi.org/pypi/pip/json", timeout=60))
-url = [f["url"] for f in m["urls"] if f["packagetype"] == "bdist_wheel"][0]
+def fits(spec):  # pip 的 requires_python 只用 ">=3.x" 这种写法
+    return all(sys.version_info[:2] >= tuple(map(int, v.split(".")))
+               for v in re.findall(r">=\s*(\d+\.\d+)", spec or ""))
+stable = [v for v in m["releases"] if re.fullmatch(r"\d+(\.\d+)*", v)]
+for v in sorted(stable, key=lambda s: tuple(map(int, s.split("."))), reverse=True):
+    files = [f for f in m["releases"][v] if f["packagetype"] == "bdist_wheel"
+             and not f.get("yanked") and fits(f.get("requires_python"))]
+    if files:
+        url = files[0]["url"]
+        break
+else:
+    sys.exit(1)
 p = os.path.join(sys.argv[1], url.rsplit("/", 1)[1])
-open(p, "wb").write(u.urlopen(url, timeout=120).read())
-print(p)' "$TMP_ROOT")" || return 1
+with open(p, "wb") as f:
+    f.write(u.urlopen(url, timeout=120).read())
+print(p)
+PY
+)" || return 1
   PIP_BREAK_SYSTEM_PACKAGES=1 "$PYTHON" "$whl/pip" install -q --no-index "${user_flag[@]+"${user_flag[@]}"}" "$whl"
 }
 bootstrap_get_pip() {
-  local getpip="$TMP_ROOT/get-pip.py"
-  # 必须带超时：urlretrieve 默认没有超时，代理不回应时会永远卡住
-  "$PYTHON" -c 'import sys, urllib.request as u; open(sys.argv[1], "wb").write(u.urlopen("https://bootstrap.pypa.io/get-pip.py", timeout=60).read())' "$getpip" \
-    && PIP_BREAK_SYSTEM_PACKAGES=1 "$PYTHON" "$getpip" "${user_flag[@]+"${user_flag[@]}"}" -q
+  local getpip="$TMP_ROOT/get-pip.py" url
+  # 老版本 Python 要用 pip/<版本>/get-pip.py（不存在时会 404，再用通用版本）
+  for url in "https://bootstrap.pypa.io/pip/$PY_VER/get-pip.py" "https://bootstrap.pypa.io/get-pip.py"; do
+    # 必须带超时：urlretrieve 默认没有超时，代理不回应时会永远卡住
+    "$PYTHON" -c 'import sys, urllib.request as u; open(sys.argv[2], "wb").write(u.urlopen(sys.argv[1], timeout=60).read())' "$url" "$getpip" 2>/dev/null \
+      && PIP_BREAK_SYSTEM_PACKAGES=1 "$PYTHON" "$getpip" "${user_flag[@]+"${user_flag[@]}"}" -q \
+      && return 0
+  done
+  return 1
 }
 if ! pip_works; then
   log "从 PyPI 下载 pip 安装 ..."
@@ -259,7 +282,10 @@ export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-60}"
 
 index_configured() {  # 用户自己配置了软件源（环境变量或 pip.conf）
   [[ -n "${PIP_INDEX_URL:-}${PIP_EXTRA_INDEX_URL:-}${PIP_FIND_LINKS:-}${PIP_NO_INDEX:-}" ]] && return 0
-  "$PYTHON" -m pip config list 2>/dev/null | grep -qiE '\.(index-url|extra-index-url|find-links|no-index)='
+  # 先存下输出再匹配：直接接 grep -q 时 pip 可能被 SIGPIPE 打断，pipefail 下会误判为“没配置”
+  local cfg
+  cfg="$("$PYTHON" -m pip config list 2>/dev/null)" || true
+  grep -qiE '\.(index-url|extra-index-url|find-links|no-index)=' <<<"$cfg"
 }
 index_reachable() {  # 用 pip 自己的网络设置（代理、证书、pip.conf）探测软件源，最多约 1 分钟
   local i
@@ -286,7 +312,8 @@ if "$PYTHON" -m pip index --help >/dev/null 2>&1 && ! index_reachable; then
     export PIP_INDEX_URL="$CN_MIRROR"
   else
     NET_DOWN=1
-    warn "$(net_hint) 先尝试只用本地缓存安装 ..."
+    warn "$(net_hint)"
+    log "先尝试只用本地缓存安装（pip 不重试、超时缩短）..."
     export PIP_RETRIES=0 PIP_DEFAULT_TIMEOUT=20
   fi
 fi
@@ -305,8 +332,10 @@ if certifi.where().startswith("/etc/"): print(m.version("certifi"))' 2>/dev/null
 pip_try() {  # pip_try <参数...>：pip 输出照常显示，同时存一份用于判断失败原因
   "$PYTHON" -m pip install -q "${user_flag[@]+"${user_flag[@]}"}" "$@" 2>&1 | tee "$PIP_LOG"
 }
-net_error() {
-  grep -qiE 'Max retries exceeded|ProxyError|NewConnectionError|ConnectTimeout|timed out|Connection (reset|aborted|refused)|name resolution|from versions: none|SSLError|IncompleteRead|do not match the hashes' "$PIP_LOG"
+net_error() {  # 失败是网络造成的（忽略 pip 自动重试成功前打印的 “Retrying …” 警告）
+  local errs
+  errs="$(grep -v 'Retrying (Retry(' "$PIP_LOG")" || true
+  grep -qiE 'Max retries exceeded|ProxyError|NewConnectionError|ConnectTimeout|timed out|Connection (reset|aborted|refused)|name resolution|from versions: none|SSLError|IncompleteRead|do not match the hashes' <<<"$errs"
 }
 install_reqs() {  # install_reqs <requirements 文件>：成功返回 0
   local req="$1" pass pkg net_tries=0
@@ -348,10 +377,12 @@ grep -viE '^[[:space:]]*jupyter' "$REQ_FILE" >"$core_req" || true
 log "安装 requirements.txt（首次约需几分钟）..."
 if install_reqs "$REQ_FILE"; then
   :
-elif net_error; then   # 网络不通时没必要再只装核心库试一遍
-  die "安装 requirements.txt 失败：$(net_hint)"
-elif install_reqs "$core_req"; then
+# 网络正常却出了网络错误、已经重试过了，就没必要再只装核心库试一遍；
+# 而离线时核心库可能已经在缓存里，值得再试一次（很快）
+elif { (( NET_DOWN )) || ! net_error; } && install_reqs "$core_req"; then
   warn "jupyter 没装上（见上方 pip 报错），已只安装核心库，不影响 verify.py。"
+elif net_error; then
+  die "安装 requirements.txt 失败：$(net_hint)"
 else
   die "安装 requirements.txt 失败，请查看上面 pip 的报错。"
 fi
