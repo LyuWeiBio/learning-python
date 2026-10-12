@@ -264,20 +264,30 @@ index_configured() {  # 用户自己配置了软件源（环境变量或 pip.con
 index_reachable() {  # 用 pip 自己的网络设置（代理、证书、pip.conf）探测软件源，最多约 1 分钟
   local i
   for i in 1 2 3; do
-    "$PYTHON" -m pip index versions pip --retries 0 --timeout 15 >/dev/null 2>&1 && return 0
+    # --no-cache-dir：不然 10 分钟内访问过的索引页会直接从缓存返回，测不出网络
+    "$PYTHON" -m pip index versions pip --no-cache-dir --retries 0 --timeout 15 >/dev/null 2>&1 && return 0
     (( i < 3 )) && sleep $((i * 5))
   done
   return 1
 }
-# 只在使用默认 PyPI 时探测：连不上就尽快失败，而不是让 pip 每个请求重试 5 次、累计等上十几分钟
-if ! index_configured && "$PYTHON" -m pip index --help >/dev/null 2>&1 && ! index_reachable; then
-  if [[ "${USE_CN_MIRROR:-0}" == 1 ]] && PIP_INDEX_URL="$CN_MIRROR" index_reachable; then
+net_hint() {
+  if index_configured; then
+    printf '连不上你配置的 pip 软件源（PIP_INDEX_URL 或 pip.conf），请检查网络、代理和源地址。'
+  else
+    printf '连不上 pypi.org，请检查网络或代理设置。在国内网络可以用镜像重试：USE_CN_MIRROR=1 bash %s' "$SCRIPT_PATH"
+  fi
+}
+# 先花几秒探测网络。连不上时不立刻放弃（本地缓存里可能已经有全部安装包），
+# 但让 pip 不重试、缩短超时：否则每个请求重试 5 次、每次等 60 秒，累计要等十几分钟才失败
+NET_DOWN=0
+if "$PYTHON" -m pip index --help >/dev/null 2>&1 && ! index_reachable; then
+  if ! index_configured && [[ "${USE_CN_MIRROR:-0}" == 1 ]] && PIP_INDEX_URL="$CN_MIRROR" index_reachable; then
     warn "连不上 pypi.org，按 USE_CN_MIRROR=1 改用镜像 $CN_MIRROR"
     export PIP_INDEX_URL="$CN_MIRROR"
-  elif [[ "${USE_CN_MIRROR:-0}" == 1 ]]; then
-    die "pypi.org 和镜像 $CN_MIRROR 都连不上，请检查网络或代理设置。"
   else
-    die "连不上 pypi.org，请检查网络或代理设置。如果在国内网络，可以用镜像重试：USE_CN_MIRROR=1 bash $SCRIPT_PATH"
+    NET_DOWN=1
+    warn "$(net_hint) 先尝试只用本地缓存安装 ..."
+    export PIP_RETRIES=0 PIP_DEFAULT_TIMEOUT=20
   fi
 fi
 
@@ -320,7 +330,7 @@ install_reqs() {  # install_reqs <requirements 文件>：成功返回 0
     fi
     # 3) 网络问题：pip 自己已对每个请求重试 5 次，这里再整体重试 2 次就够了。
     #    重试时不用缓存：中途被打断的下载会在缓存里留下残缺文件，之后每次都读到它
-    if net_error && (( net_tries < 2 )); then
+    if net_error && (( NET_DOWN == 0 && net_tries < 2 )); then
       net_tries=$((net_tries + 1))
       cache=(--no-cache-dir)
       log "网络错误，$((net_tries * 15)) 秒后重试（不使用缓存）..."
@@ -338,7 +348,9 @@ grep -viE '^[[:space:]]*jupyter' "$REQ_FILE" >"$core_req" || true
 log "安装 requirements.txt（首次约需几分钟）..."
 if install_reqs "$REQ_FILE"; then
   :
-elif ! net_error && install_reqs "$core_req"; then   # 网络不通时没必要再试一遍
+elif net_error; then   # 网络不通时没必要再只装核心库试一遍
+  die "安装 requirements.txt 失败：$(net_hint)"
+elif install_reqs "$core_req"; then
   warn "jupyter 没装上（见上方 pip 报错），已只安装核心库，不影响 verify.py。"
 else
   die "安装 requirements.txt 失败，请查看上面 pip 的报错。"
